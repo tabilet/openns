@@ -170,6 +170,7 @@ func (r *Router) Mount(backend logical.Backend, prefix string, mountEntry *Mount
 	r.l.Lock()
 	defer r.l.Unlock()
 
+	r.logger.Trace("44444444444", "ns path", mountEntry.Namespace().Path, "prefix", prefix)
 	// prepend namespace
 	prefix = mountEntry.Namespace().Path + prefix
 
@@ -214,6 +215,7 @@ func (r *Router) Mount(backend logical.Backend, prefix string, mountEntry *Mount
 	}
 
 	r.root.Insert(prefix, re)
+	r.logger.Trace("5555555555555555", "prefix", prefix, "re", re)
 	r.storagePrefix.Insert(re.storagePrefix, re)
 	r.mountUUIDCache.Insert(re.mountEntry.UUID, re.mountEntry)
 	r.mountAccessorCache.Insert(re.mountEntry.Accessor, re.mountEntry)
@@ -568,12 +570,15 @@ func (r *Router) routeCommon(ctx context.Context, req *logical.Request, existenc
 	// Find the mount point
 	r.l.RLock()
 	adjustedPath := req.Path
+	r.logger.Trace("11111111111", "ns path", ns.Path, "path", adjustedPath)
 	mount, raw, ok := r.root.LongestPrefix(ns.Path + adjustedPath)
+	r.logger.Trace("22222222222", "raw", raw, "mount", mount, "ok", ok)
 	if !ok && !strings.HasSuffix(adjustedPath, "/") {
 		// Re-check for a backend by appending a slash. This lets "foo" mean
 		// "foo/" at the root level which is almost always what we want.
 		adjustedPath += "/"
 		mount, raw, ok = r.root.LongestPrefix(ns.Path + adjustedPath)
+		r.logger.Trace("333333333333", "raw", raw, "mount", mount, "ok", ok)
 	}
 	r.l.RUnlock()
 	if !ok {

@@ -687,7 +687,8 @@ func (c *Core) handleCancelableRequest(ctx context.Context, req *logical.Request
 	}
 
 	if ns.Path != "" {
-		return nil, logical.CodedError(403, "namespaces feature not enabled")
+		//return nil, logical.CodedError(403, "namespaces feature not enabled")
+		c.logger.Warn("namespaces feature found", "ns", ns)
 	}
 
 	var auth *logical.Auth
