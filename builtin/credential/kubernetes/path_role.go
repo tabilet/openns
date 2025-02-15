@@ -5,6 +5,7 @@ package kubeauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -264,6 +265,12 @@ func (b *kubeAuthBackend) pathRoleCreateUpdate(ctx context.Context, req *logical
 	b.l.Lock()
 	defer b.l.Unlock()
 
+	txRollback, err := logical.StartTxStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer txRollback()
+
 	// Check if the role already exists
 	role, err := b.role(ctx, req.Storage, roleName)
 	if err != nil {
@@ -274,7 +281,7 @@ func (b *kubeAuthBackend) pathRoleCreateUpdate(ctx context.Context, req *logical
 	if role == nil && req.Operation == logical.CreateOperation {
 		role = &roleStorageEntry{}
 	} else if role == nil {
-		return nil, fmt.Errorf("role entry not found during update operation")
+		return nil, errors.New("role entry not found during update operation")
 	}
 
 	if err := role.ParseTokenFields(req, data); err != nil {
@@ -393,10 +400,12 @@ func (b *kubeAuthBackend) pathRoleCreateUpdate(ctx context.Context, req *logical
 	if entry == nil {
 		return nil, fmt.Errorf("failed to create storage entry for role %s", roleName)
 	}
-	if err = req.Storage.Put(ctx, entry); err != nil {
+	if err := req.Storage.Put(ctx, entry); err != nil {
 		return nil, err
 	}
-
+	if err := logical.EndTxStorage(ctx, req); err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 

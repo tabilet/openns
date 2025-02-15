@@ -5,6 +5,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -663,7 +664,7 @@ func (r *Router) routeCommon(ctx context.Context, req *logical.Request, existenc
 		te := req.TokenEntry()
 
 		if te == nil {
-			return nil, false, false, fmt.Errorf("nil token entry")
+			return nil, false, false, errors.New("nil token entry")
 		}
 
 		if te.Type != logical.TokenTypeService {
@@ -683,7 +684,7 @@ func (r *Router) routeCommon(ctx context.Context, req *logical.Request, existenc
 
 		default:
 			if te.CubbyholeID == "" {
-				return nil, false, false, fmt.Errorf("empty cubbyhole id")
+				return nil, false, false, errors.New("empty cubbyhole id")
 			}
 			req.ClientToken = te.CubbyholeID
 		}

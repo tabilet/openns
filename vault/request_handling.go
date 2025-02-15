@@ -29,6 +29,7 @@ import (
 	"github.com/openbao/openbao/helper/metricsutil"
 	"github.com/openbao/openbao/helper/namespace"
 	"github.com/openbao/openbao/internalshared/configutil"
+	"github.com/openbao/openbao/internalshared/listenerutil"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/helper/consts"
 	"github.com/openbao/openbao/sdk/v2/helper/errutil"
@@ -60,6 +61,7 @@ var (
 type HandlerProperties struct {
 	Core                  *Core
 	ListenerConfig        *configutil.Listener
+	AllListeners          []listenerutil.Listener
 	DisablePrintableCheck bool
 	RecoveryMode          bool
 	RecoveryToken         *uberAtomic.String
@@ -1388,7 +1390,7 @@ func (c *Core) handleLoginRequest(ctx context.Context, req *logical.Request) (re
 			auth.Alias.Local = mEntry.Local
 
 			if auth.Alias.Name == "" {
-				return nil, nil, fmt.Errorf("missing name in alias")
+				return nil, nil, errors.New("missing name in alias")
 			}
 
 			var err error
@@ -1399,7 +1401,7 @@ func (c *Core) handleLoginRequest(ctx context.Context, req *logical.Request) (re
 				return nil, nil, err
 			}
 			if entity == nil {
-				return nil, nil, fmt.Errorf("failed to create an entity for the authenticated alias")
+				return nil, nil, errors.New("failed to create an entity for the authenticated alias")
 			}
 
 			if entity.Disabled {
@@ -1581,7 +1583,7 @@ func (c *Core) LoginCreateToken(ctx context.Context, ns *namespace.Namespace, re
 	// Determine mount type
 	mountEntry := c.router.MatchingMountEntry(ctx, reqPath)
 	if mountEntry == nil {
-		return false, nil, fmt.Errorf("failed to find a matching mount")
+		return false, nil, errors.New("failed to find a matching mount")
 	}
 
 	sysView := c.router.MatchingSystemView(ctx, reqPath)
@@ -1901,7 +1903,7 @@ func (c *Core) buildMfaEnforcementResponse(eConfig *mfa.MFAEnforcementConfig) (*
 		if mConfig.Type == mfaMethodTypeDuo {
 			duoConf, ok := mConfig.Config.(*mfa.Config_DuoConfig)
 			if !ok {
-				return nil, fmt.Errorf("invalid MFA configuration type")
+				return nil, errors.New("invalid MFA configuration type")
 			}
 			duoUsePasscode = duoConf.DuoConfig.UsePasscode
 		}
@@ -2173,7 +2175,7 @@ func (c *Core) DecodeSSCTokenInternal(token string) (*tokens.Token, error) {
 	// Skip batch and old style service tokens. These can have the prefix "b.",
 	// "s." (for old tokens) or "hvb."
 	if !strings.HasPrefix(token, consts.ServiceTokenPrefix) {
-		return nil, fmt.Errorf("not service token")
+		return nil, errors.New("not service token")
 	}
 
 	// Consider the suffix of the token only when unmarshalling
@@ -2181,7 +2183,7 @@ func (c *Core) DecodeSSCTokenInternal(token string) (*tokens.Token, error) {
 
 	tokenBytes, err := base64.RawURLEncoding.DecodeString(suffixToken)
 	if err != nil {
-		return nil, fmt.Errorf("can't decode token")
+		return nil, errors.New("can't decode token")
 	}
 
 	err = proto.Unmarshal(tokenBytes, signedToken)

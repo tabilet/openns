@@ -111,6 +111,13 @@ path "test/+/wildcard/+/*" {
 path "test/+/wildcard/+/end*" {
 	capabilities = ["create", "sudo"]
 }
+path "paginated-kv/metadata" {
+	capabilities = ["list"]
+	pagination_limit = 12345
+}
+path "unpaginated-kv/metadata" {
+	capabilities = ["list"]
+}
 `)
 
 func TestPolicy_Parse(t *testing.T) {
@@ -340,6 +347,22 @@ func TestPolicy_Parse(t *testing.T) {
 			},
 			HasSegmentWildcards: true,
 		},
+		{
+			Path:         "paginated-kv/metadata",
+			Capabilities: []string{"list"},
+			Permissions: &ACLPermissions{
+				CapabilitiesBitmap: ListCapabilityInt,
+				PaginationLimit:    12345,
+			},
+			PaginationLimitHCL: 12345,
+		},
+		{
+			Path:         "unpaginated-kv/metadata",
+			Capabilities: []string{"list"},
+			Permissions: &ACLPermissions{
+				CapabilitiesBitmap: ListCapabilityInt,
+			},
+		},
 	}
 
 	if diff := deep.Equal(p.Paths, expect); diff != nil {
@@ -354,7 +377,7 @@ bad  = "foo"
 nope = "yes"
 `))
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatal("expected error")
 	}
 
 	if !strings.Contains(err.Error(), `invalid key "bad" on line 2`) {
@@ -375,7 +398,7 @@ path "/" {
 }
 `))
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatal("expected error")
 	}
 
 	if !strings.Contains(err.Error(), `invalid key "capabilites" on line 3`) {
@@ -390,7 +413,7 @@ path "/" {
 }
 `))
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatal("expected error")
 	}
 
 	if !strings.Contains(err.Error(), `path "/": invalid policy "banana"`) {
@@ -407,7 +430,7 @@ path "/" {
 }
 `))
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatal("expected error")
 	}
 
 	if !strings.Contains(err.Error(), `max_wrapping_ttl cannot be less than min_wrapping_ttl`) {
@@ -422,7 +445,7 @@ path "/" {
 }
 `))
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatal("expected error")
 	}
 
 	if !strings.Contains(err.Error(), `path "/": invalid capability "banana"`) {
@@ -437,7 +460,7 @@ path "foo/+*" {
 }
 `))
 	if err == nil {
-		t.Fatalf("expected error")
+		t.Fatal("expected error")
 	}
 
 	if !strings.Contains(err.Error(), `path "foo/+*": invalid use of wildcards ('+*' is forbidden)`) {

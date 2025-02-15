@@ -219,7 +219,7 @@ func (b *jwtAuthBackend) configDeviceAuthURL(ctx context.Context, s logical.Stor
 
 	if config.OIDCDeviceAuthURL != "" {
 		if config.OIDCDeviceAuthURL == "N/A" {
-			return fmt.Errorf("no device auth endpoint url discovered")
+			return errors.New("no device auth endpoint url discovered")
 		}
 		return nil
 	}
@@ -244,7 +244,7 @@ func (b *jwtAuthBackend) configDeviceAuthURL(ctx context.Context, s logical.Stor
 	err = json.Unmarshal(body, &daj)
 	if err != nil || daj.DeviceAuthURL == "" {
 		b.cachedConfig.OIDCDeviceAuthURL = "N/A"
-		return fmt.Errorf("no device auth endpoint url discovered")
+		return errors.New("no device auth endpoint url discovered")
 	}
 
 	b.cachedConfig.OIDCDeviceAuthURL = daj.DeviceAuthURL
@@ -315,6 +315,12 @@ func (b *jwtAuthBackend) pathConfigWrite(ctx context.Context, req *logical.Reque
 		BoundIssuer:          d.Get("bound_issuer").(string),
 		ProviderConfig:       d.Get("provider_config").(map[string]interface{}),
 	}
+
+	txRollback, err := logical.StartTxStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer txRollback()
 
 	// Check if the config already exists, to determine if this is a create or
 	// an update, since req.Operation is always 'update' in this handler, and
@@ -436,6 +442,10 @@ func (b *jwtAuthBackend) pathConfigWrite(ctx context.Context, req *logical.Reque
 	}
 
 	b.reset()
+
+	if err := logical.EndTxStorage(ctx, req); err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }

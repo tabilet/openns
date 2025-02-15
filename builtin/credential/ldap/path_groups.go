@@ -104,8 +104,13 @@ func (b *backend) pathGroupDelete(ctx context.Context, req *logical.Request, d *
 }
 
 func (b *backend) pathGroupRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	groupname := d.Get("name").(string)
+	txRollback, err := logical.StartTxStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer txRollback()
 
+	groupname := d.Get("name").(string)
 	cfg, err := b.Config(ctx, req)
 	if err != nil {
 		return nil, err
@@ -125,6 +130,10 @@ func (b *backend) pathGroupRead(ctx context.Context, req *logical.Request, d *fr
 		return nil, nil
 	}
 
+	if err := logical.EndTxStorage(ctx, req); err != nil {
+		return nil, err
+	}
+
 	return &logical.Response{
 		Data: map[string]interface{}{
 			"policies": group.Policies,
@@ -134,6 +143,12 @@ func (b *backend) pathGroupRead(ctx context.Context, req *logical.Request, d *fr
 
 func (b *backend) pathGroupWrite(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	groupname := d.Get("name").(string)
+
+	txRollback, err := logical.StartTxStorage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer txRollback()
 
 	cfg, err := b.Config(ctx, req)
 	if err != nil {
@@ -154,6 +169,10 @@ func (b *backend) pathGroupWrite(ctx context.Context, req *logical.Request, d *f
 		return nil, err
 	}
 	if err := req.Storage.Put(ctx, entry); err != nil {
+		return nil, err
+	}
+
+	if err := logical.EndTxStorage(ctx, req); err != nil {
 		return nil, err
 	}
 
