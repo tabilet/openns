@@ -69,12 +69,14 @@ that lacks a sign-off to this agreement will not be accepted by the OpenBao proj
 | Julian Cassignol  | jcassignol@wallix.com               |                                            | Cristian Popi (cpopi@wallix.com)        | Wallix                    | Member             |
 | Alexander Scheel  | ascheel@gitlab.com                  | [@cipherboy](https://github.com/cipherboy) | Jocelyn Eillis (jeillis@gitlab.com)     | GitLab                    | Chair              |
 
+To view the process for joining the TSC, see [GOVERNANCE.md](GOVERNANCE.md) in
+the root of this repository. That document is considered part of this document.
+
 ### OpenBao Working Groups
 
-| Working Group             | Chair       | Members                               |
-|---------------------------|-------------| ------------------------------------- |
-| Development Working Group | Alex Scheel | Dan Ghita, Nathan Phelps, Jan Martens |
-
+| Working Group                                                  | Chair       | Voting Members                                      |
+|----------------------------------------------------------------|-------------| --------------------------------------------------- |
+| [Development Working Group](https://github.com/openbao/dev-wg) | Alex Scheel | Dan Ghita, Nathan Phelps, Jan Martens, Dave Dykstra |
 
 ## Issues
 
