@@ -228,6 +228,8 @@ func TestPKI_DeviceCert(t *testing.T) {
 		"allow_subdomains":   true,
 		"not_after":          "9999-12-31T23:59:59Z",
 		"not_before":         "1900-01-01T00:00:00Z",
+		"not_after_bound":    "permit",
+		"not_before_bound":   "permit",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -904,6 +906,8 @@ func generateRoleSteps(t *testing.T, useCSRs bool) []logicaltest.TestStep {
 		KeyType:                   "rsa",
 		KeyBits:                   2048,
 		RequireCN:                 true,
+		NotBeforeBound:            "permit",
+		NotAfterBound:             "permit",
 		AllowWildcardCertificates: new(bool),
 	}
 	*roleVals.AllowWildcardCertificates = true
@@ -3874,7 +3878,9 @@ func TestReadWriteDeleteRoles(t *testing.T) {
 		"allowed_domains_template":           false,
 		"allow_token_displayname":            false,
 		"country":                            []interface{}{},
+		"not_before_bound":                   "permit",
 		"not_before":                         "",
+		"not_after_bound":                    "permit",
 		"not_after":                          "",
 		"postal_code":                        []interface{}{},
 		"use_csr_common_name":                true,
@@ -4453,7 +4459,7 @@ func TestBackend_RevokePlusTidy_MultipleCerts(t *testing.T) {
 	}
 
 	// Wait for the short-lived certificates to expire
-	time.Sleep(time.Until(lastTTL) + 2*time.Second)
+	time.Sleep(time.Until(lastTTL))
 
 	// Tidy the expired certificates
 	waitForManualTidy(t, client, map[string]interface{}{
@@ -4461,16 +4467,33 @@ func TestBackend_RevokePlusTidy_MultipleCerts(t *testing.T) {
 		"safety_buffer":   "1s",
 	})
 
+	// maxAttempts is the number of times we will check for async completion
+	maxAttempts := 10
+	// sleepTime is the time to wait between attempts
+	sleepTime := 400 * time.Millisecond
+
 	// tidy metrics check
-	mostRecentInterval := inmemSink.Data()[len(inmemSink.Data())-1]
 	expectedGauges := map[string]float32{
 		"secrets.pki.tidy.cert_store_total_entries":           5, // All the certs
 		"secrets.pki.tidy.cert_store_total_entries_remaining": 2, // The long-lived certs
 	}
-	for gauge, value := range expectedGauges {
-		if metric, ok := mostRecentInterval.Gauges[gauge]; !ok || metric.Value != value {
-			t.Fatalf("Expected gauge %s to have value %f, but got %f", gauge, value, metric.Value)
+	for i := 1; i < maxAttempts; i++ {
+		allFound := true
+		for gauge, value := range expectedGauges {
+			mostRecentInterval := inmemSink.Data()[len(inmemSink.Data())-1]
+			metric, ok := mostRecentInterval.Gauges[gauge]
+			if ok && metric.Value == value {
+				break
+			}
+			allFound = false
+			if i == maxAttempts {
+				t.Fatalf("Expected gauge %s to have value %f, but got %f", gauge, value, metric.Value)
+			}
 		}
+		if allFound {
+			break
+		}
+		time.Sleep(sleepTime)
 	}
 
 	// Issue two certificates, a short-lived and a long-lived, then revoke them.
@@ -4507,7 +4530,7 @@ func TestBackend_RevokePlusTidy_MultipleCerts(t *testing.T) {
 	}
 
 	// Wait for the short-lived certificate to expire
-	time.Sleep(time.Until(cert1.NotAfter) + 2*time.Second)
+	time.Sleep(time.Until(cert1.NotAfter) + 50*time.Millisecond)
 
 	// Tidy the revoked certificates
 	waitForManualTidy(t, client, map[string]interface{}{
@@ -4516,34 +4539,53 @@ func TestBackend_RevokePlusTidy_MultipleCerts(t *testing.T) {
 	})
 
 	// Verify that the revoked short-lived certificate has been tidied
-	crl := getParsedCrl(t, client, "pki")
-	revokedCerts := crl.TBSCertList.RevokedCertificates
 	found := false
-	for _, revoked := range revokedCerts {
-		serial := certutil.GetHexFormatted(revoked.SerialNumber.Bytes(), ":")
-		if serial == certSerial1 {
-			t.Fatalf("Short-lived certificate with serial %s should have been tidied", certSerial1)
+	for i := 1; i < maxAttempts; i++ {
+		crl := getParsedCrl(t, client, "pki")
+		revokedCerts := crl.TBSCertList.RevokedCertificates
+		for _, revoked := range revokedCerts {
+			serial := certutil.GetHexFormatted(revoked.SerialNumber.Bytes(), ":")
+			if serial == certSerial1 && i == maxAttempts {
+				t.Fatalf("Short-lived certificate with serial %s should have been tidied", certSerial1)
+			}
+			if serial == certSerial2 {
+				found = true
+				break
+			}
 		}
-		if serial == certSerial2 {
-			found = true
+		if found {
+			break
 		}
+		time.Sleep(sleepTime)
 	}
 	if !found {
 		t.Fatalf("Long-lived certificate with serial %s should still be in the revoked store", certSerial2)
 	}
 
 	// Final tidy metrics check
-	mostRecentInterval2 := inmemSink.Data()[len(inmemSink.Data())-1]
-	expectedGauges2 := map[string]float32{
+	expectedGauges = map[string]float32{
 		"secrets.pki.tidy.revoked_cert_total_entries":           2, // All the revoked certs
 		"secrets.pki.tidy.revoked_cert_total_entries_remaining": 1, // The revoked long-lived cert
 		"secrets.pki.tidy.cert_store_total_entries":             5, // All the non-revoked certs
 		"secrets.pki.tidy.cert_store_total_entries_remaining":   2, // The non-revoked long-lived certs
 	}
-	for gauge, value := range expectedGauges2 {
-		if metric, ok := mostRecentInterval2.Gauges[gauge]; !ok || metric.Value != value {
-			t.Fatalf("Expected gauge %s to have value %f, but got %f", gauge, value, metric.Value)
+	for i := 1; i < maxAttempts; i++ {
+		allFound := true
+		for gauge, value := range expectedGauges {
+			mostRecentInterval := inmemSink.Data()[len(inmemSink.Data())-1]
+			metric, ok := mostRecentInterval.Gauges[gauge]
+			if ok && metric.Value == value {
+				break
+			}
+			allFound = false
+			if i == maxAttempts {
+				t.Fatalf("Expected gauge %s to have value %f, but got %f", gauge, value, metric.Value)
+			}
 		}
+		if allFound {
+			break
+		}
+		time.Sleep(sleepTime)
 	}
 }
 
@@ -7730,6 +7772,147 @@ func TestPaginatedListing(t *testing.T) {
 	resp, err = CBPaginatedList(b, s, "issuers", all_ids[2], 2)
 	require.NoError(t, err)
 	require.Equal(t, resp.Data["keys"], all_ids[3:5])
+}
+
+func TestForbidNotBeforeBound(t *testing.T) {
+	t.Parallel()
+
+	b, s := CreateBackendWithStorage(t)
+
+	_, err := CBWrite(b, s, "root/generate/internal", map[string]interface{}{
+		"common_name": "example.com",
+		"not_after":   "9999-12-31T23:59:59Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create role with not_before_bound=forbid
+	_, err = CBWrite(b, s, "roles/example", map[string]interface{}{
+		"allow_subdomains": true,
+		"allowed_domains":  "example.com",
+		"not_before_bound": "forbid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Issuing a certificate by providing not_before should result in an error
+	resp, err := CBWrite(b, s, "issue/example", map[string]interface{}{
+		"common_name": "test.example.com",
+		"not_before":  "9998-12-31T23:59:59Z",
+	})
+	require.Error(t, err)
+	require.True(t, resp.IsError())
+	require.Equal(t, "not_before_bound is set to forbid. not_before cannot be provided.", err.Error())
+}
+
+func TestDurationNotBeforeBound(t *testing.T) {
+	t.Parallel()
+
+	b, s := CreateBackendWithStorage(t)
+
+	_, err := CBWrite(b, s, "root/generate/internal", map[string]interface{}{
+		"common_name": "example.com",
+		"not_after":   "9999-12-31T23:59:59Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	not_before_duration := time.Hour * 2
+
+	// Create role with not_before_bound=duration
+	_, err = CBWrite(b, s, "roles/example", map[string]interface{}{
+		"allow_subdomains":    true,
+		"allowed_domains":     "example.com",
+		"not_before_bound":    "duration",
+		"not_before_duration": not_before_duration,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	not_before := time.Now().Add(-time.Hour * 3).UTC().Format(time.RFC3339Nano)
+
+	// Issuing a certificate by providing not_before = time.now - 3h should result in an error
+	resp, err := CBWrite(b, s, "issue/example", map[string]interface{}{
+		"common_name": "test.example.com",
+		"not_before":  not_before,
+	})
+	require.Error(t, err)
+	require.True(t, resp.IsError())
+	require.Equal(t, fmt.Sprintf("not_before_bound is set to duration. Cannot satisfy request as it would result in notBefore of %s that is older than the allowed not_before_duration of %s", not_before, not_before_duration), err.Error())
+}
+
+func TestForbidNotAfterBound(t *testing.T) {
+	t.Parallel()
+
+	b, s := CreateBackendWithStorage(t)
+
+	_, err := CBWrite(b, s, "root/generate/internal", map[string]interface{}{
+		"common_name": "example.com",
+		"not_after":   "9999-12-31T23:59:59Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create role with not_after_bound=forbid
+	_, err = CBWrite(b, s, "roles/example", map[string]interface{}{
+		"allow_subdomains": true,
+		"allowed_domains":  "example.com",
+		"not_after_bound":  "forbid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Issuing a certificate by providing not_after should result in an error
+	resp, err := CBWrite(b, s, "issue/example", map[string]interface{}{
+		"common_name": "test.example.com",
+		"not_after":   "9998-12-31T23:59:59Z",
+	})
+	require.Error(t, err)
+	require.True(t, resp.IsError())
+	require.Equal(t, "not_after_bound is set to forbid. not_after cannot be provided.", err.Error())
+}
+
+func TestTimestampNotAfterBound(t *testing.T) {
+	t.Parallel()
+
+	b, s := CreateBackendWithStorage(t)
+
+	_, err := CBWrite(b, s, "root/generate/internal", map[string]interface{}{
+		"common_name": "example.com",
+		"not_after":   "9999-12-31T23:59:59Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	maxTimestamp := time.Now().Add(time.Hour * 2).UTC().Format(time.RFC3339Nano)
+
+	// Create role with not_after_bound=time.now + 2h
+	_, err = CBWrite(b, s, "roles/example", map[string]interface{}{
+		"allow_subdomains": true,
+		"allowed_domains":  "example.com",
+		"not_after_bound":  maxTimestamp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	not_after := time.Now().Add(time.Hour * 3).UTC().Format(time.RFC3339Nano)
+
+	// Issuing a certificate with not_after=time.now + 3h should result in an error
+	resp, err := CBWrite(b, s, "issue/example", map[string]interface{}{
+		"common_name": "test.example.com",
+		"not_after":   not_after,
+	})
+	require.Error(t, err)
+	require.True(t, resp.IsError())
+	require.Equal(t, fmt.Sprintf("not_after_bound is set to %s. Cannot statisfy request as that would result in notAfter of %s that is beyond the maximum timestamp of %s", maxTimestamp, not_after, maxTimestamp), err.Error())
 }
 
 var (
